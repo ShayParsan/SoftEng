@@ -1,0 +1,167 @@
+These are rough snippets of code, not important
+name: Deploy JAR app to Azure Web App
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Build JAR and Push to GitHub Releases"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+    permissions:
+      id-token: write
+      contents: read  # ✅ Required for downloading from GitHub Releases
+
+    steps:
+      - name: Get Latest Release Info
+        id: get_release
+        run: |
+          API_URL="https://api.github.com/repos/${{ github.repository }}/releases/latest"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" $API_URL)
+
+          echo "📄 GitHub API Response: $RESPONSE"
+
+          # Get the latest release tag (dynamic)
+          RELEASE_TAG=$(echo "$RESPONSE" | jq -r '.tag_name')
+          
+          if [[ -z "$RELEASE_TAG" || "$RELEASE_TAG" == "null" ]]; then
+            echo "❌ No release found!"
+            exit 1
+          fi
+
+          echo "✅ Found latest release: $RELEASE_TAG"
+
+          # Get the correct JAR filename
+          JAR_NAME=$(echo "$RESPONSE" | jq -r '.assets[] | select(.name | endswith(".jar")) | .name')
+
+          if [[ -z "$JAR_NAME" || "$JAR_NAME" == "null" ]]; then
+            echo "🚨 ERROR: No JAR file found in the latest release!"
+            exit 1
+          fi
+
+          echo "✅ Found JAR file: $JAR_NAME"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
+          echo "JAR_NAME=${JAR_NAME}" >> $GITHUB_ENV
+
+      - name: Download JAR from GitHub Releases (Authenticated)
+        run: |
+          API_URL="https://api.github.com/repos/${{ github.repository }}/releases/latest"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" $API_URL)
+
+          # Get the correct JAR file download URL (authenticated)
+          DOWNLOAD_URL=$(echo "$RESPONSE" | jq -r '.assets[] | select(.name == "'"$JAR_NAME"'") | .url')
+
+          if [[ -z "$DOWNLOAD_URL" || "$DOWNLOAD_URL" == "null" ]]; then
+            echo "🚨 ERROR: Failed to get the download URL for the JAR file!"
+            exit 1
+          fi
+
+          echo "📥 Downloading JAR from: $DOWNLOAD_URL"
+
+          # Download the JAR file using an authenticated request
+          curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/octet-stream" -o "$JAR_NAME" "$DOWNLOAD_URL"
+
+          if [ ! -f "$JAR_NAME" ]; then
+            echo "🚨 ERROR: JAR file download failed!"
+            exit 1
+          fi
+
+          echo "✅ Successfully downloaded: $JAR_NAME"
+
+      - name: Verify Downloaded JAR
+        run: ls -l $JAR_NAME
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_2E3D6EF4169749959D11CE67E1CD6B11 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_F8FB4EAD2DA9477EA5BAE95E10D26A02 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_629194A78265472697C35DE645A141F9 }}
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'bcs05-backend'
+          slot-name: 'Production'
+          package: ${{ env.JAR_NAME }}
+--------
+front end
+name: Configure and Verify Frontend-Backend Connection
+
+on:
+  workflow_run:
+    workflows: ["Deploy to Azure"]
+    types:
+      - completed
+
+jobs:
+  configure-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+
+      - name: Authenticate with GitHub Packages
+        run: npm set //npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Built Next.js App from GitHub Packages
+        run: |
+          PACKAGE_NAME="@UcllSoftwareEngineering2425/frontend-bcs05"
+          PACKAGE_VERSION=$(npm show $PACKAGE_NAME version --registry=https://npm.pkg.github.com/)
+
+          if [[ -z "$PACKAGE_VERSION" || "$PACKAGE_VERSION" == "null" ]]; then
+            echo "❌ Error: Package not found in GitHub Packages!"
+            exit 1
+          fi
+
+          echo "📦 Downloading package: $PACKAGE_NAME@$PACKAGE_VERSION"
+          npm pack $PACKAGE_NAME@$PACKAGE_VERSION --registry=https://npm.pkg.github.com/
+
+          TARBALL=$(ls *.tgz)
+          echo "Extracting: $TARBALL"
+          mkdir -p app
+          tar -xzf $TARBALL -C app --strip-components=1
+
+      - name: Configure Environment Variables in .env.production
+        run: |
+          echo "NEXT_PUBLIC_BACKEND_URL=https://bcs05-backend-b9gqaffxf8bta7e9.westeurope-01.azurewebsites.net" >> app/.env.production
+          echo "✅ NEXT_PUBLIC_BACKEND_URL set in environment variables."
+
+      - name: Verify Environment Variables
+        run: cat app/.env.production
+
+  verify-frontend:
+    runs-on: ubuntu-latest
+    needs: configure-env
+    steps:
+      - name: Check if Frontend Can Reach Backend
+        run: |
+          echo "🔍 Checking frontend-to-backend connection..."
+
+          # Perform the request and capture the HTTP response code
+          RESPONSE=$(curl -s -o response.txt -w "%{http_code}" \
+            -H "Accept: application/json" \
+            https://bcs05-backend-b9gqaffxf8bta7e9.westeurope-01.azurewebsites.net/status)  # ✅ Using `/status` instead of `/api/test`
+
+          # Print the full response if the request fails
+          if [ "$RESPONSE" -eq 200 ]; then
+            echo "✅ Frontend successfully connected to Backend."
+          else
+            echo "❌ ERROR: Frontend could not reach Backend (HTTP $RESPONSE)"
+            echo "🔍 Full response body:"
+            cat response.txt
+            exit 1
+          fi

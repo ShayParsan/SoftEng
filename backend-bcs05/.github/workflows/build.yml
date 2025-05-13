@@ -1,0 +1,71 @@
+name: Build JAR, Delete Old Packages, and Publish to GitHub Packages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'microsoft'
+
+      - name: Set build version
+        id: build_version
+        run: echo "VERSION=$(date +%Y%m%d%H%M)" >> $GITHUB_ENV
+
+      - name: Build with Maven
+        run: |
+          mvn versions:set -DnewVersion=${{ env.VERSION }}
+          mvn clean package
+
+      - name: Verify JAR file exists
+        run: ls -l target/*.jar
+
+      - name: Delete Old Packages
+        run: |
+          echo "🗑️ Deleting previous package versions..."
+          VERSION_IDS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/UcllSoftwareEngineering2425/packages/maven/be.ucll.se.teambcs05.courses-backend/versions" | jq -r '.[].id')
+
+          if [ -z "$VERSION_IDS" ]; then
+            echo "No old versions found, skipping deletion."
+          else
+            for VERSION_ID in $VERSION_IDS; do
+              echo "🚨 Deleting package version ID: $VERSION_ID"
+              curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                   -H "Accept: application/vnd.github+json" \
+                   "https://api.github.com/orgs/UcllSoftwareEngineering2425/packages/maven/be.ucll.se.teambcs05.courses-backend/versions/$VERSION_ID"
+            done
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish JAR to GitHub Packages
+        run: |
+          echo "📦 Publishing JAR to GitHub Packages..."
+          mvn deploy -DskipTests -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/${{ github.repository }} -Drevision=${{ env.VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish JAR to GitHub Releases
+        run: |
+          echo "📦 Publishing JAR as GitHub Release..."
+          JAR_FILE=$(ls target/*.jar)
+          gh release create v${{ env.VERSION }} $JAR_FILE --repo ${{ github.repository }} --title "Build ${{ env.VERSION }}" --notes "Automated JAR upload"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,59 @@
+#spring:
+#  application:
+#    name: courses
+#
+#  profiles:
+#    active: ${SPRING_PROFILES_ACTIVE:dev}  # Default to dev if not set (for development)
+#
+#  jpa:
+#    hibernate:
+#      ddl-auto: none
+#    properties:
+#      hibernate:
+#        auto_quote_keyword: true
+#    open-in-view: true
+#
+#  security:
+#    oauth2:
+#      resourceserver:
+#        jwt:
+#          authority-prefix: ""
+#
+#server:
+#  port: ${PORT:8080}  # Dynamically use PORT environment variable or default to 8080
+#
+#cors:
+#  allowed-origins:
+#    - http://localhost:8080  # Enable for local frontend access
+
+spring:
+  application:
+    name: courses
+  h2:
+    console:
+      enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        auto_quote_keyword: true
+    open-in-view: true
+  sql:
+    init:
+      mode: always
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          authority-prefix: ""
+
+
+cors:
+  allowed-origins:
+    - https://bcs05-frontend-dsdbf5a0d4hmanbh.westeurope-01.azurewebsites.net
+    - http://localhost:3000
+    - http://localhost:8080
+  allowed-methods: GET, POST, PUT, DELETE
+  allowed-headers: "*"
+  allow-credentials: true

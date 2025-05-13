@@ -1,0 +1,8 @@
+"DESCRIPTION","DURATION IN MS","NAME","PARENT SUITE","START TIME","STATUS","STOP TIME","SUB SUITE","SUITE","TEST CLASS","TEST METHOD"
+"","900","Authenticated user attempts to access the lecturers overview page","","Thu May 08 14:50:57 CEST 2025","passed","Thu May 08 14:50:57 CEST 2025","","Lecturers Overview - Authenticated","",""
+"","1955","Admin attempts to create schedule for lecturer","","Thu May 08 14:50:52 CEST 2025","passed","Thu May 08 14:50:53 CEST 2025","","Create Schedule","",""
+"","861","Authenticated user sees all lecturers correctly","","Thu May 08 14:51:00 CEST 2025","passed","Thu May 08 14:51:01 CEST 2025","","Lecturers Overview - Authenticated","",""
+"","121","Unauthenticated user attempts to access the lecturers overview page","","Thu May 08 14:51:04 CEST 2025","passed","Thu May 08 14:51:04 CEST 2025","","Lecturers Overview - Unauthenticated","",""
+"","1912","Admin enrolls a student in a schedule","","Thu May 08 14:51:08 CEST 2025","passed","Thu May 08 14:51:10 CEST 2025","","Enrolling students in a schedule","",""
+"","125","Unauthenticated user attempts to access the schedules overview page","","Thu May 08 14:51:13 CEST 2025","passed","Thu May 08 14:51:13 CEST 2025","","Schedules Overview - Unauthenticated","",""
+"","1952","Admin attempts to create schedule for lecturer with endDate before startDate","","Thu May 08 14:50:47 CEST 2025","passed","Thu May 08 14:50:49 CEST 2025","","Create Schedule","",""

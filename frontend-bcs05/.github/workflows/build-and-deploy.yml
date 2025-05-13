@@ -1,0 +1,101 @@
+name: Build and Deploy Frontend
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20.x'
+
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+          npm install express
+
+      - name: Build and Prepare Standalone
+        run: |
+          npm run build
+
+          # Move public and static assets correctly
+          cp -r public .next/standalone/
+          mkdir -p .next/standalone/.next/static
+          cp -r .next/static/. .next/standalone/.next/static/
+
+      - name: Prepare Deployment Folder
+        run: |
+          mkdir -p standalone
+          cp -r .next/standalone/. standalone/
+          cp package.json package-lock.json routes.json standalone/
+
+      # ✨ Here! Patch package.json to fix start script
+      - name: Patch start script
+        working-directory: standalone
+        run: |
+          sed -i 's#"start":[[:space:]]*"node .next/standalone/server.js"#"start": "node server.js"#' package.json || true
+
+      - name: Check Deployment Folder
+        run: |
+          echo "✅ Checking standalone contents"
+          ls -laR standalone
+          echo "✅ Checking standalone/.next/static contents"
+          ls -laR standalone/.next/static || true
+
+      - name: Archive Standalone
+        run: |
+          cd standalone
+          tar -czf ../standalone.tar.gz .
+
+      - name: Upload Standalone Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: standalone-artifact
+          path: standalone.tar.gz
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: standalone-artifact
+
+      - name: Extract Artifact
+        run: |
+          mkdir extracted-package
+          tar -xzf standalone.tar.gz -C extracted-package
+
+      - name: Check Extracted Files
+        run: |
+          echo "✅ Extracted files:"
+          ls -laR extracted-package
+
+      - name: Zip extracted package
+        run: |
+          cd extracted-package
+          zip -r ../frontend.zip .
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: bcs05-frontend
+          slot-name: Production
+          package: frontend.zip
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_F43DEC0FE44B47B99D9878621389C69C }}

@@ -1,0 +1,19 @@
+{
+  "routes": [
+    {
+      "route": "/_next/*",
+      "allowedRoles": ["anonymous"],
+      "serve": "/.next/static/"
+    },
+    {
+      "route": "/public/*",
+      "allowedRoles": ["anonymous"],
+      "serve": "/public/"
+    },
+    {
+      "route": "/*",
+      "allowedRoles": ["anonymous"],
+      "serve": "/.next/standalone/server.js"
+    }
+  ]
+}

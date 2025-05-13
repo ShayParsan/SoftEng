@@ -1,0 +1,69 @@
+name: Deploy JAR app to Azure Web App
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Build JAR, Delete Old Packages, and Publish to GitHub Packages"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Setup Production Profile
+        run: echo "SPRING_PROFILES_ACTIVE=prod" >> $GITHUB_ENV
+
+      - name: Get Latest Release Info
+        id: get_release
+        run: |
+          API_URL="https://api.github.com/repos/${{ github.repository }}/releases/latest"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" $API_URL)
+          JAR_NAME=$(echo "$RESPONSE" | jq -r '.assets[] | select(.name | endswith(".jar")) | .name')
+          echo "JAR_NAME=$JAR_NAME" >> $GITHUB_ENV
+
+      - name: Download JAR from GitHub Releases
+        run: |
+          API_URL="https://api.github.com/repos/${{ github.repository }}/releases/latest"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" $API_URL)
+          DOWNLOAD_URL=$(echo "$RESPONSE" | jq -r '.assets[] | select(.name == "'"$JAR_NAME"'") | .url')
+          curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+               -H "Accept: application/octet-stream" -o "$JAR_NAME" "$DOWNLOAD_URL"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Downloaded JAR
+        run: ls -l $JAR_NAME
+
+      - name: Deploy JAR to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'bcs05-backend'
+          slot-name: 'Production'
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_3BA2282D777F4E53903D9C13FA50028D }}
+          package: ${{ env.JAR_NAME }}
+
+      - name: Clear old startup command
+        run: |
+          echo "Clearing old startup file..."
+          curl -X PATCH \
+            -H "Authorization: Basic $(echo -n '${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_3BA2282D777F4E53903D9C13FA50028D }}' | base64)" \
+            -H "Content-Type: application/json" \
+            -d '{"properties":{"appCommandLine":""}}' \
+            https://bcs05-backend-b9gqaffxf8bta7e9.scm.westeurope-01.azurewebsites.net/api/settings
+
+      - name: Set new Startup Command
+        run: |
+          echo "Setting new startup file..."
+          curl -X PATCH \
+            -H "Authorization: Basic $(echo -n '${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_3BA2282D777F4E53903D9C13FA50028D }}' | base64)" \
+            -H "Content-Type: application/json" \
+            -d '{"properties":{"appCommandLine":"java -jar /home/site/wwwroot/${{ env.JAR_NAME }} --spring.profiles.active=prod"}}' \
+            https://bcs05-backend-b9gqaffxf8bta7e9.scm.westeurope-01.azurewebsites.net/api/settings
